@@ -124,16 +124,6 @@ class Monomers:
         assert((Radiai_per_kind.shape == NumberMono_per_kind.shape)
                and (Radiai_per_kind.shape == Densities_per_kind.shape))
 
-        # -->> your turn
-        # Monomers can be initialized with individual radiai and
-        # density = mass/volume.
-        # For example:
-        # NumberOfMonomers = 7
-        # NumberMono_per_kind = [ 2, 5]
-        # Radiai_per_kind = [ 0.2, 0.5]
-        # Densities_per_kind = [ 2.2, 5.5]
-        # then monomers mono_0, mono_1 have radius 0.2 and mass 2.2*pi*0.2^2
-        # and monomers mono_2,...,mono_6 have radius 0.5 and mass 5.5*pi*0.5^2
 
         l_nbr = len(NumberMono_per_kind)
         current_index = 0
@@ -146,21 +136,35 @@ class Monomers:
 
         '''initialize velocities'''
         assert(k_BT > 0)
-        for k in range(self.NM):
-            standDev = np.sqrt(k_BT / self.mass[k])
-            Ypsilon_x = -np.log(np.random.uniform())
-            Ypsilon_y = -np.log(np.random.uniform())
-            self.vel[k] = [standDev * np.sqrt(2.*Ypsilon_x),
-                           standDev * np.sqrt(2.*Ypsilon_y)]
-        # E_kin = sum_i m_i /2 v_i^2 = N * dim/2 k_BT
-        # https://en.wikipedia.org/wiki/Ideal_gas_law#Energy_associated_with_a_gas
 
-        # -->> your turn
-        # Initial configuration of $N$ monomers has velocities of random
-        # orientation and norms satisfying
-        # $E = \sum_i^N m_i / 2 (v_i)^2 = N d/2 k_B T$, with $d$ being
-        # the dimension,
-        # $k_B$ the Boltzmann constant, and $T$ the temperature.
+
+        #first particle which is the aggregate with smal velocity
+        theta=np.random.uniform(0,2*np.pi)
+        V0=1e-1
+        self.vel[0,:]=[V0*np.cos(theta),V0*np.sin(theta)]
+
+        E_kin=self.NM*self.DIM/2*k_BT - self.mass[0]*V0**2/2
+        Vstat=[]
+        for i in range(1,self.NM-1):
+            vmax=np.sqrt(2*E_kin/self.mass[i])
+            v=np.random.uniform(0,vmax/4)
+            Vstat.append(v)
+            theta=np.random.uniform(0,2*np.pi)
+            E_kin-=self.mass[i]/2*v**2
+            self.vel[i,:]=[v*np.cos(theta),v*np.sin(theta)]
+        #last particle : random not used for the norm of v
+        v=np.sqrt(2*E_kin/self.mass[-1])
+        Vstat.append(v)
+        theta=np.random.uniform(0,2*np.pi)
+        self.vel[-1,:]=[v*np.cos(theta),v*np.sin(theta)]
+
+
+        # for i in range(self.NM):
+        #     print(np.linalg.norm(self.vel[i,:]))
+        # print('moy,e-t: ',np.mean(Vstat),np.std(Vstat))
+
+
+
 
     def assignRandomMonoPos(self, start_index=0):
         '''
@@ -248,40 +252,29 @@ class Monomers:
         mono_i = self.mono_pairs[:, 0]  # List of collision partner 1
         mono_j = self.mono_pairs[:, 1]  # List of collision partner 2
 
-        delta_x0 = self.pos[mono_i, 0] - self.pos[mono_j, 0]
-        delta_y0 = self.pos[mono_i, 1] - self.pos[mono_j, 1]
+        delta_pos= np.zeros((len(mono_i),self.DIM))
+        delta_vel= np.zeros((len(mono_i),self.DIM))
 
-        delta_vx = self.vel[mono_i, 0] - self.vel[mono_j, 0]
-        delta_vy = self.vel[mono_i, 1] - self.vel[mono_j, 1]
+        List_dt=np.zeros(len(mono_i))
+        A = np.zeros(len(mono_i))
+        B = np.zeros(len(mono_i))
+        Omega = np.zeros(len(mono_i))
 
-        a = delta_vx * delta_vx + delta_vy * delta_vy
-        b = 2*(delta_vx*delta_x0 + delta_vy*delta_y0)
-        c = (delta_x0**2 + delta_y0**2
-             - (self.rad[mono_i] + self.rad[mono_j])**2)
+        delta_pos = self.pos[mono_i,:]-self.pos[mono_j,:]
+        delta_vel = self.vel[mono_i,:]-self.vel[mono_j,:]
 
-        Omega = b**2 - 4*a*c
-        Omega = np.where((Omega > 0) & (b < 0), Omega, np.inf)
+        A = delta_vel[:,0]**2+delta_vel[:,1]**2
+        B = 2*delta_vel[:,0]*delta_pos[:,0] + 2*delta_vel[:,1]*delta_pos[:,1]
+        Omega = B**2 - 4*A*( delta_pos[:,0]**2+delta_pos[:,1]**2 - (self.rad[mono_i] + self.rad[mono_j])**2)
+        sol_m = 1/(2*A)*(-B - np.sqrt(Omega))
+        List_dt=np.where(np.logical_or(Omega<0,B>=0),np.inf,sol_m)
 
-        dt_collision_minus = 1/(2*a)*(-b - np.sqrt(Omega))
-        dt_collision_plus = 1/(2*a)*(-b + np.sqrt(Omega))
+        Index=np.argmin(List_dt)
 
-        dt_collision = np.array([dt_collision_minus, dt_collision_plus])
-        dt_collision_index = np.where(dt_collision > 0,
-                                      dt_collision,
-                                      np.inf)
-        dt_collision_index = np.where(dt_collision_index
-                                      == np.min(dt_collision_index))
 
-        minCollTime = dt_collision[dt_collision_index[0][0],
-                                   dt_collision_index[1][0]]
-        if minCollTime < 1e-13:
-            minCollTime = [np.inf]
-        collision_disk_1 = mono_i[dt_collision_index[1]][0]
-        collision_disk_2 = mono_j[dt_collision_index[1]][0]
-        self.next_mono_coll.dt = minCollTime
-        self.next_mono_coll.mono_1 = collision_disk_1
-        self.next_mono_coll.mono_2 = collision_disk_2
-
+        self.next_mono_coll.dt = List_dt[Index]
+        self.next_mono_coll.mono_1 = mono_i[Index]
+        self.next_mono_coll.mono_2 = mono_j[Index]
     def compute_next_event(self):
         '''
         Function gets event information about:
@@ -386,7 +379,8 @@ class Aggregate(Monomers):
             Positions initialized as pure monomer system by monomer __init__.
             ---> Reinitalize all monomer positions, but place aggregate first.
             '''
-            self.assignRandomMonoPos()
+            self.pos[0]=[(L_xMax-L_xMin)/2,(L_yMax-L_yMin)/2]
+            self.assignRandomMonoPos(1)
 
 
     def __str__(self, index = 'all'):
@@ -420,7 +414,7 @@ class Aggregate(Monomers):
              - (self.bond_length[0])**2)
 
         Omega = b**2 - 4*a*c
-        Omega = np.where((Omega > 0) & (b > 0), Omega, np.inf)
+        Omega = np.where(np.logical_and((Omega > 0),(b > 0)), Omega, np.inf)
 
         dt_collision_minus = 1/(2*a)*(-b - np.sqrt(Omega))
         dt_collision_plus = 1/(2*a)*(-b + np.sqrt(Omega))
@@ -448,7 +442,7 @@ class Aggregate(Monomers):
         It is in principle guaranteed that c <= 0 and b**2-4*a*c >= 0
         But that requires that c <= 0.
         '''
-        CollTime=np.where(((b**2-4*a*c)>0) & (c<=0),(-b+np.sqrt(b**2-4*a*c))/(2*a),np.inf)
+        CollTime=np.where(np.logical_and((b**2-4*a*c)>0 ,c<=0),(-b+np.sqrt(b**2-4*a*c))/(2*a),np.inf)
         pair_min=np.argmin(CollTime)
         self.next_dimer_coll.dt = CollTime[pair_min]
         self.next_dimer_coll.Type='dimer'
@@ -485,7 +479,6 @@ class Aggregate(Monomers):
         https://en.wikipedia.org/wiki/Elastic_collision#Two-dimensional_collision_with_two_moving_objects
         '''
 
-        print(next_event)
         if next_event.Type == "wall":
             self.vel[next_event.mono_1, next_event.w_dir] *= -1
         else:
@@ -506,38 +499,31 @@ class Aggregate(Monomers):
                                               + self.mass[next_event.mono_2]))
                                            * delta_hat @ np.transpose(delta_v)
                                            * delta_hat)
+
             #si mono_1 est un des dimers il faut transformer masse et vitesse de 2:
-
-            Aggregates=np.append(self.dimer_pairs,self.aggregate)
-
-            if next_event.mono_1 in Aggregates and not(next_event.mono_2 in Aggregates):
-                print('1<--2')
-                if len(self.dimer_pairs)==0:
-                    self.dimer_pairs=np.array([[next_event.mono_1,next_event.mono_2]])
-                else:
-                    self.dimer_pairs = np.append(self.dimer_pairs,
-                                                [[next_event.mono_1,next_event.mono_2]],axis=0)
-
-                self.vel[next_event.mono_2] *= np.sqrt(self.mass[next_event.mono_2]/
-                                                        self.mass[next_event.mono_1])
-                self.mass[next_event.mono_2] = self.mass[next_event.mono_1]
-                self.bond_length=np.append( self.bond_length,[self.bond_length[0]])
-                self.aggregate=np.append(self.aggregate,[next_event.mono_2])
-
+            if next_event.mono_1 in self.aggregate and not(next_event.mono_2 in self.aggregate):
+                self.aggregation(next_event.mono_1,next_event.mono_2)
 
             #si mono_2 est un des dimers il faut transformer masse et vitesse de 1:
-            if next_event.mono_2 in Aggregates and not(next_event.mono_1 in Aggregates):
-                print('2<--1')
-                if len(self.dimer_pairs)==0:
-                    self.dimer_pairs=np.array([[next_event.mono_2,next_event.mono_1]])
-                else:
-                    self.dimer_pairs = np.append(self.dimer_pairs,
-                                                [[next_event.mono_2,next_event.mono_1]],axis=0)
-                self.mass[next_event.mono_1] = self.mass[next_event.mono_2]
-                self.vel[next_event.mono_1] *= np.sqrt(self.mass[next_event.mono_1]/
-                                                        self.mass[next_event.mono_2])
-                self.bond_length=np.append( self.bond_length,self.bond_length[0])
-                self.aggregate=np.append(self.aggregate,[next_event.mono_1])
+            if next_event.mono_2 in self.aggregate and not(next_event.mono_1 in self.aggregate):
+                self.aggregation(next_event.mono_2,next_event.mono_1)
+
+
+    def aggregation(self,aggregate, mono):
+        '''Function applies the transformation below when there is a collision aggregate monomers:
+         1)create a new dimer ( and the bond correponding)
+         2)update the velocity norm of the new aggregated particle
+         3)update the mass of the new aggregated particle ( m_orange --> m_blue)
+         '''
+
+        if len(self.dimer_pairs)==0:
+            self.dimer_pairs=np.array([[aggregate,mono]])
+        else:
+            self.dimer_pairs = np.append(self.dimer_pairs,[[aggregate,mono]],axis=0)
+            self.bond_length=np.append( self.bond_length,self.bond_length[0])
+            self.vel[mono] *= np.sqrt(self.mass[mono]/self.mass[aggregate])
+            self.mass[mono] = self.mass[aggregate]
+            self.aggregate=np.append(self.aggregate,[mono])
 
 
     def snapshot(self, FileName = './snapshot.png', Title = ''):
