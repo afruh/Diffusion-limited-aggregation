@@ -7,18 +7,18 @@ from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import time
-np.random.seed(99)
+np.random.seed(9999999)
 
-NumberOfMonomers, NumberOfAggregate = 200,1
+NumberOfMonomers = 201
 L_xMin, L_xMax = 0, 30
 L_yMin, L_yMax = 0, 30
-NumberMono_per_kind = np.array([1,199])
+NumberMono_per_kind = np.array([1,200])
 Radiai_per_kind = np.array([0.5,0.5])
-Densities_per_kind = np.array([1,1])
-bond_length_scale = 1.5
-k_BT = 10
+Densities_per_kind = np.array([1000,1])
+bond_length_scale = 3
+k_BT = 5
 # call constructor, which should initialize the configuration
-mols = pc.Aggregate(NumberOfMonomers, NumberOfAggregate, L_xMin, L_xMax, L_yMin,
+mols = pc.Aggregate(NumberOfMonomers, L_xMin, L_xMax, L_yMin,
                      L_yMax, NumberMono_per_kind, Radiai_per_kind,
                      Densities_per_kind, bond_length_scale, k_BT)
 
@@ -29,11 +29,8 @@ mols = pc.Aggregate(NumberOfMonomers, NumberOfAggregate, L_xMin, L_xMax, L_yMin,
 '''define parameters for MD simulation'''
 t = 0.0
 dt = 0.02
-NumberOfFrames = 3000
+NumberOfFrames = 5000
 next_event = mols.compute_next_event()
-
-Agg=[]
-T=[]
 
 def MolecularDynamicsLoop(frame):
     '''
@@ -42,10 +39,7 @@ def MolecularDynamicsLoop(frame):
 
     global t, mols, next_event
     if len(mols.aggregate)==mols.NM:
-        ani.event_source.stop()
-    ti=time.time()
-    Agg.append(len(mols.aggregate))
-
+        ani.event_source.stop() # we want to stop when there isn't no monomere alone in the simulation
 
     next_frame_t = t + dt
 
@@ -54,22 +48,17 @@ def MolecularDynamicsLoop(frame):
         t += next_event.dt
         mols.compute_new_velocities(next_event)
         next_event = mols.compute_next_event()
+
     dt_remaining = next_frame_t - t
     mols.pos += mols.vel * dt_remaining
     t += dt_remaining
-    next_event = mols.compute_next_event()
-
-    # ec=0
-    # for k in range(mols.NM):
-    #     ec+=mols.mass[k]*np.linalg.norm(mols.vel[k])**2/2
-    # Ec.append(ec)
+    next_event.dt-=dt_remaining
 
     plt.title(f'$t = {t}$, remaining frames = {NumberOfFrames-(frame+1)}')
-    MonomerColors[mols.aggregate] = 0
+    MonomerColors[mols.aggregate] = 0 # change the color of all the aggregated particles
     collection.set_array(MonomerColors)
     collection.set_offsets(mols.pos)
     collection_aggregate.set_offsets(mols.pos[mols.aggregate])
-    T.append(ti-time.time())
     return collection
 
 '''We define and initalize the plot for the animation'''
@@ -86,10 +75,11 @@ rect = mpatches.Rectangle((L_xMin, L_yMin), L_xMax-L_xMin, L_yMax-L_yMin,
                           linestyle='dashed', ec='gray', fc='None')
 ax.add_patch(rect)
 
+# We use cmap='tab10' in which 0 correspond to blue and 0.1 to orange
 MonomerColors = np.ones(mols.NM)*0.1  # unique color for monomers
-MonomerColors[mols.aggregate] = 0
+MonomerColors[mols.aggregate] = 0     # unique color for aggregated particles
 
-Width, Hight, Angle = mols.bond_length, mols.bond_length, np.zeros( mols.NA )
+Width, Hight, Angle = mols.bond_length, mols.bond_length, np.zeros(1)
 collection_aggregate = EllipseCollection( Width, Hight, Angle, units='x', offsets=mols.pos[mols.aggregate],
                transOffset=ax.transData, edgecolor = 'k', facecolor = 'None')
 ax.add_collection(collection_aggregate)
@@ -113,11 +103,8 @@ ani = FuncAnimation(fig, MolecularDynamicsLoop, frames=NumberOfFrames,
                     interval=Delay_in_ms, blit=False, repeat=False)
 plt.show()
 
-
-frames=np.arange(len(T))
-plt.figure()
-plt.plot(frames,T)
-plt.figure()
-plt.plot(frames,Agg,'k')
-plt.show()
-
+for i in range(51):
+    if i not in mols.aggregate:
+        print(i)
+        print(mols.vel[i])
+        print(mols.pos[i])

@@ -136,34 +136,15 @@ class Monomers:
 
         '''initialize velocities'''
         assert(k_BT > 0)
-
-
-        #first particle which is the aggregate with smal velocity
+        #first particle which is the aggregate with the small velocity
         theta=np.random.uniform(0,2*np.pi)
         V0=1e-1
         self.vel[0,:]=[V0*np.cos(theta),V0*np.sin(theta)]
 
-        E_kin=self.NM*self.DIM/2*k_BT - self.mass[0]*V0**2/2
-        Vstat=[]
-        for i in range(1,self.NM-1):
-            vmax=np.sqrt(2*E_kin/self.mass[i])
-            v=np.random.uniform(0,vmax/4)
-            Vstat.append(v)
+        for i in range(1,self.NM):
+            v=np.sqrt(2*self.DIM*k_BT/self.mass[i])
             theta=np.random.uniform(0,2*np.pi)
-            E_kin-=self.mass[i]/2*v**2
             self.vel[i,:]=[v*np.cos(theta),v*np.sin(theta)]
-        #last particle : random not used for the norm of v
-        v=np.sqrt(2*E_kin/self.mass[-1])
-        Vstat.append(v)
-        theta=np.random.uniform(0,2*np.pi)
-        self.vel[-1,:]=[v*np.cos(theta),v*np.sin(theta)]
-
-
-        # for i in range(self.NM):
-        #     print(np.linalg.norm(self.vel[i,:]))
-        # print('moy,e-t: ',np.mean(Vstat),np.std(Vstat))
-
-
 
 
     def assignRandomMonoPos(self, start_index=0):
@@ -270,11 +251,11 @@ class Monomers:
         List_dt=np.where(np.logical_or(Omega<0,B>=0),np.inf,sol_m)
 
         Index=np.argmin(List_dt)
-
-
         self.next_mono_coll.dt = List_dt[Index]
         self.next_mono_coll.mono_1 = mono_i[Index]
         self.next_mono_coll.mono_2 = mono_j[Index]
+
+
     def compute_next_event(self):
         '''
         Function gets event information about:
@@ -290,49 +271,6 @@ class Monomers:
             return self.next_wall_coll
         else:
             return self.next_mono_coll
-
-
-    def snapshot(self, FileName='./snapshot.png', Title='$t = $?'):
-        '''
-        Function saves a snapshot of current configuration,
-        i.e. particle positions as circles of corresponding radius,
-        velocities as arrows on particles,
-        blue dashed lines for the hard walls of the simulation box.
-        '''
-        fig, ax = plt.subplots(dpi=300)
-        L_xMin, L_xMax = self.BoxLimMin[0], self.BoxLimMax[0]
-        L_yMin, L_yMax = self.BoxLimMin[1], self.BoxLimMax[1]
-        BorderGap = 0.1*(L_xMax - L_xMin)
-        ax.set_xlim(L_xMin-BorderGap, L_xMax+BorderGap)
-        ax.set_ylim(L_yMin-BorderGap, L_yMax+BorderGap)
-
-        # --->plot hard walls (rectangle)
-        rect = mpatches.Rectangle((L_xMin, L_yMin), L_xMax-L_xMin,
-                                  L_yMax-L_yMin, linestyle='dashed',
-                                  ec='gray', fc='None')
-        ax.add_patch(rect)
-        ax.set_aspect('equal')
-        ax.set_xlabel('$x$ position')
-        ax.set_ylabel('$y$ position')
-
-        # --->plot monomer positions as circles
-        MonomerColors = np.linspace(0.2, 0.95, self.NM)
-        Width, Hight, Angle = 2*self.rad, 2*self.rad, np.zeros(self.NM)
-        collection = EllipseCollection(Width, Hight, Angle, units='x',
-                                       offsets=self.pos,
-                                       transOffset=ax.transData,
-                                       cmap='nipy_spectral', edgecolor='k')
-        collection.set_array(MonomerColors)
-        collection.set_clim(0, 1)  # <--- we set the limit for the color code
-        ax.add_collection(collection)
-
-        # --->plot velocities as arrows
-        ax.quiver(self.pos[:, 0], self.pos[:, 1], self.vel[:, 0],
-                  self.vel[:, 1], units='dots', scale_units='dots')
-
-        plt.title(Title)
-        plt.savefig(FileName)
-        plt.close()
 
 class Aggregate(Monomers):
     """
@@ -359,35 +297,22 @@ class Aggregate(Monomers):
     IMPORTANT! If system is initialized from file, then other parameters
     of __init__ are ignored!
     """
-    def __init__(self, NumberOfMonomers = 4, NumberOfAggregate = 1, L_xMin = 0, L_xMax = 1, L_yMin = 0, L_yMax = 1, NumberMono_per_kind = np.array([1,3]), Radiai_per_kind = 0.5*np.ones(2), Densities_per_kind = np.array([10,1]), bond_length_scale = 1.2, k_BT = 1, FilePath = './Configuration.p'):
-        #if __init__() defined in derived class -> child does NOT inherit parent's __init__()
-        try:
-            self.__dict__ = pickle.load( open( FilePath, "rb" ) )
-            print("IMPORTANT! System is initialized from file %s, i.e. other input parameters of __init__ are ignored!" % FilePath)
-        except:
-            assert ( (NumberOfAggregate > 0) and (NumberOfMonomers >= 2*NumberOfAggregate) )
-            assert ( bond_length_scale > 1. ) # is in units of minimal distance of respective monomer pair
-            Monomers.__init__(self, NumberOfMonomers, L_xMin, L_xMax, L_yMin, L_yMax, NumberMono_per_kind, Radiai_per_kind, Densities_per_kind, k_BT )
-            self.NA = NumberOfAggregate
-            self.ND=0
-            self.dimer_pairs = np.array([])
-            self.aggregate = np.arange(self.NA)
-            self.bond_length = np.array([2*bond_length_scale*self.rad[0]])
-            self.next_dimer_coll = CollisionEvent( 'dimer', 0, 0, 0, 0)
+    def __init__(self, NumberOfMonomers = 4, L_xMin = 0, L_xMax = 1, L_yMin = 0, L_yMax = 1, NumberMono_per_kind = np.array([1,3]), Radiai_per_kind = 0.5*np.ones(2), Densities_per_kind = np.array([10,1]), bond_length_scale = 1.2, k_BT = 1, FilePath = './Configuration.p'):
+        assert ( NumberOfMonomers >= 2 )
+        assert ( bond_length_scale > 1. ) # is in units of minimal distance of respective monomer pair
+        Monomers.__init__(self, NumberOfMonomers, L_xMin, L_xMax, L_yMin, L_yMax, NumberMono_per_kind, Radiai_per_kind, Densities_per_kind, k_BT )
+        self.ND=0
+        self.dimer_pairs = np.array([])
+        self.aggregate = [0]
+        self.bond_length = np.array([2*bond_length_scale*self.rad[0]])
+        self.next_dimer_coll = CollisionEvent( 'dimer', 0, 0, 0, 0)
 
-            '''
-            Positions initialized as pure monomer system by monomer __init__.
-            ---> Reinitalize all monomer positions, but place aggregate first.
-            '''
-            self.pos[0]=[(L_xMax-L_xMin)/2,(L_yMax-L_yMin)/2]
-            self.assignRandomMonoPos(1)
-
-
-    def __str__(self, index = 'all'):
-        if index == 'all':
-            return Monomers.__str__(self) + "\ndimer pairs = " + str(self.dimer_pairs) + "\nwith max bond length = " + str(self.bond_length)
-        else:
-            return "\nDimer pair " + str(index) + " consists of monomers = " + str(self.dimer_pairs[index]) + "\nwith max bond length = " + str(self.bond_length[index]) + Monomers.__str__(self, self.dimer_pairs[index][0]) + Monomers.__str__(self, self.dimer_pairs[index][1])
+        '''
+        Positions initialized as pure monomer system by monomer __init__.
+        ---> Reinitalize all monomer positions, but place aggregate first.
+        '''
+        self.pos[0]=[(L_xMax-L_xMin)/2,(L_yMax-L_yMin)/2]
+        self.assignRandomMonoPos(1)
 
     def Dimer_pair_time(self):
         '''
@@ -408,16 +333,16 @@ class Aggregate(Monomers):
         delta_vx = self.vel[mono_i, 0] - self.vel[mono_j, 0]
         delta_vy = self.vel[mono_i, 1] - self.vel[mono_j, 1]
 
-        a = delta_vx * delta_vx + delta_vy * delta_vy
-        b = 2*(delta_vx*delta_x0 + delta_vy*delta_y0)
-        c = (delta_x0**2 + delta_y0**2
+        A = delta_vx * delta_vx + delta_vy * delta_vy
+        B = 2*(delta_vx*delta_x0 + delta_vy*delta_y0)
+        C = (delta_x0**2 + delta_y0**2
              - (self.bond_length[0])**2)
 
-        Omega = b**2 - 4*a*c
-        Omega = np.where(np.logical_and((Omega > 0),(b > 0)), Omega, np.inf)
+        Omega = B**2 - 4*A*C
+        Omega = np.where(np.logical_and((Omega > 0),(B > 0)), Omega, np.inf)
 
-        dt_collision_minus = 1/(2*a)*(-b - np.sqrt(Omega))
-        dt_collision_plus = 1/(2*a)*(-b + np.sqrt(Omega))
+        dt_collision_minus = 1/(2*A)*(-B - np.sqrt(Omega))
+        dt_collision_plus = 1/(2*A)*(-B + np.sqrt(Omega))
         dt_collision = np.array([dt_collision_minus, dt_collision_plus])
         dt_collision_index = np.where(dt_collision > 0,
                                       dt_collision,
@@ -439,10 +364,10 @@ class Aggregate(Monomers):
 
         '''
         There are actually no conditions on the collision time.
-        It is in principle guaranteed that c <= 0 and b**2-4*a*c >= 0
-        But that requires that c <= 0.
+        It is in principle guaranteed that C <= 0 and B**2-4*A*C >= 0
+        But that requires that C <= 0.
         '''
-        CollTime=np.where(np.logical_and((b**2-4*a*c)>0 ,c<=0),(-b+np.sqrt(b**2-4*a*c))/(2*a),np.inf)
+        CollTime=np.where(np.logical_and((B**2-4*A*C)>0 ,C<=0),(-B+np.sqrt(B**2-4*A*C))/(2*A),np.inf)
         pair_min=np.argmin(CollTime)
         self.next_dimer_coll.dt = CollTime[pair_min]
         self.next_dimer_coll.Type='dimer'
@@ -500,11 +425,11 @@ class Aggregate(Monomers):
                                            * delta_hat @ np.transpose(delta_v)
                                            * delta_hat)
 
-            #si mono_1 est un des dimers il faut transformer masse et vitesse de 2:
+            # if mono_1 is one of the dimers, mono_2 must change its mass and velocity:
             if next_event.mono_1 in self.aggregate and not(next_event.mono_2 in self.aggregate):
                 self.aggregation(next_event.mono_1,next_event.mono_2)
 
-            #si mono_2 est un des dimers il faut transformer masse et vitesse de 1:
+            # if mono_2 is one of the dimers, mono_1 must change its mass and velocity:
             if next_event.mono_2 in self.aggregate and not(next_event.mono_1 in self.aggregate):
                 self.aggregation(next_event.mono_2,next_event.mono_1)
 
@@ -524,60 +449,3 @@ class Aggregate(Monomers):
             self.vel[mono] *= np.sqrt(self.mass[mono]/self.mass[aggregate])
             self.mass[mono] = self.mass[aggregate]
             self.aggregate=np.append(self.aggregate,[mono])
-
-
-    def snapshot(self, FileName = './snapshot.png', Title = ''):
-        '''
-        ---> Overwriting snapshot(...) of Monomers class!
-        Function saves a snapshot of current configuration,
-        i.e. monomer positions as circles of corresponding radius,
-        dimer bond length as back empty circles (on top of monomers)
-        velocities as arrows on monomers,
-        blue dashed lines for the hard walls of the simulation box.
-        '''
-        fig, ax = plt.subplots( dpi=300 )
-        L_xMin, L_xMax = self.BoxLimMin[0], self.BoxLimMax[0]
-        L_yMin, L_yMax = self.BoxLimMin[1], self.BoxLimMax[1]
-        BorderGap = 0.1*(L_xMax - L_xMin)
-        ax.set_xlim(L_xMin-BorderGap, L_xMax+BorderGap)
-        ax.set_ylim(L_yMin-BorderGap, L_yMax+BorderGap)
-
-        #--->plot hard walls (rectangle)
-        rect = mpatches.Rectangle((L_xMin,L_yMin), L_xMax-L_xMin, L_yMax-L_yMin, linestyle='dashed', ec='gray', fc='None')
-        ax.add_patch(rect)
-        ax.set_aspect('equal')
-        ax.set_xlabel('$x$ position')
-        ax.set_ylabel('$y$ position')
-
-        #--->plot monomer positions as circles
-        COLORS = np.linspace(0.2,0.95,self.ND+1)
-        MonomerColors = np.ones(self.NM)*COLORS[-1] #unique color for monomers
-        # recolor each monomer pair with individual color
-        MonomerColors[self.dimer_pairs[:,0]] = COLORS[:len(self.dimer_pairs)]
-        MonomerColors[self.dimer_pairs[:,1]] = COLORS[:len(self.dimer_pairs)]
-
-        #plot solid monomers
-        Width, Hight, Angle = 2*self.rad, 2*self.rad, np.zeros( self.NM )
-        collection = EllipseCollection( Width, Hight, Angle, units='x', offsets=self.pos,
-                       transOffset=ax.transData, cmap='nipy_spectral', edgecolor = 'k')
-        collection.set_array(MonomerColors)
-        collection.set_clim(0, 1) # <--- we set the limit for the color code
-        ax.add_collection(collection)
-
-        #plot bond length of dimers as black cicles
-        Width, Hight, Angle = self.bond_length, self.bond_length, np.zeros( self.ND )
-        mono_i = self.dimer_pairs[:,0]
-        mono_j = self.dimer_pairs[:,1]
-        collection_mono_i = EllipseCollection( Width, Hight, Angle, units='x', offsets=self.pos[mono_i],
-                       transOffset=ax.transData, edgecolor = 'k', facecolor = 'None')
-        collection_mono_j = EllipseCollection( Width, Hight, Angle, units='x', offsets=self.pos[mono_j],
-                       transOffset=ax.transData, edgecolor = 'k', facecolor = 'None')
-        ax.add_collection(collection_mono_i)
-        ax.add_collection(collection_mono_j)
-
-        #--->plot velocities as arrows
-        ax.quiver( self.pos[:,0], self.pos[:,1], self.vel[:,0], self.vel[:,1] , units = 'dots', scale_units = 'dots')
-
-        plt.title(Title)
-        plt.savefig( FileName)
-        plt.close()
